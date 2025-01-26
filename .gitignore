@@ -1,3 +1,8 @@
+# Data Files
+eigenfaces.npy
+image_cpts.pkl
+classroom_graphs.pkl
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
