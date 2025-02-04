@@ -5,6 +5,7 @@ from graph_viz import render_graph
 
 
 def sigmoid(x):
+    """Numerically stable sigmoid function"""
     return np.where(x >= 0,
                     1 / (1 + np.exp(-x)),
                     np.exp(x) / (1 + np.exp(x)))
@@ -12,12 +13,18 @@ def sigmoid(x):
 
 class SocialNetworkModel:
     def __init__(self):
+        """Initialize model parameters randomly"""
         self.a = np.random.normal(0, 0.1)  # Small normal initialization
         self.b = np.random.normal(0, 0.1)
 
     def compute_log_likelihood_and_gradients(self, X, E):
+        """
+        Compute the log likelihood and its gradients as per the MLE derivation
 
-        n = X.shape[0]
+        L(a,b) = log p(E|X,a,b)
+                = Σ_(i<j) [eij log σ(ax(i)ᵀx(j) + b) + (1-eij)log(1-σ(ax(i)ᵀx(j) + b))]
+        """
+        n = X.shape[0]  # number of students (should be 15)
 
         # Get pairs of indices for i < j
         i, j = np.tril_indices(n, k=-1)
@@ -37,12 +44,16 @@ class SocialNetworkModel:
                     (1 - e_ij) * np.log(1 - probs + 1e-10))
 
         # Compute gradients as derived
+        # ∂L/∂a = Σ_(i<j) (eij - σ(ax(i)ᵀx(j) + b)) * x(i)ᵀx(j)
         grad_a = np.sum((e_ij - probs) * dot_products)
+
+        # ∂L/∂b = Σ_(i<j) (eij - σ(ax(i)ᵀx(j) + b))
         grad_b = np.sum(e_ij - probs)
 
         return ll, grad_a, grad_b
 
     def train(self, graphs, learning_rate=0.006, max_iter=1000):
+        """Train using gradient ascent on all graphs"""
         history = []
         last_ll = float('-inf')
 
@@ -70,6 +81,7 @@ class SocialNetworkModel:
                 'b': self.b
             })
 
+            # Print last 10 iterations as required
             if iter >= max_iter - 10:
                 print(f"Iter {iter + 1}: a = {self.a:.4f}, b = {self.b:.4f}, "
                       f"log-likelihood = {total_ll:.4f}")
@@ -83,10 +95,13 @@ class SocialNetworkModel:
         return history
 
     def generate_graph(self, n_students=15, n_features=3):
+        """Generate new random graph according to the model.
+        Fixed n=15 students with m=3 features as specified."""
 
-
+        # Generate random feature vectors uniformly from [-1,+1]
         features = np.random.uniform(-1, 1, (n_students, n_features))
 
+        # Initialize empty adjacency matrix
         edges = np.zeros((n_students, n_students), dtype=np.uint8)
 
         # Generate edges for i < j pairs
@@ -106,20 +121,22 @@ class SocialNetworkModel:
 
 
 def main():
-
+    # Load data
     print("Loading data...")
     with open('classroom_graphs.pkl', 'rb') as f:
         graphs = pickle.load(f)
 
-
+    # Initialize and train model
     print("\nTraining model...")
     model = SocialNetworkModel()
     history = model.train(graphs)
 
+    # Print final parameters
     print(f"\nFinal parameters:")
     print(f"a = {model.a:.6f}")
     print(f"b = {model.b:.6f}")
 
+    # Plot training curve
     plt.figure(figsize=(10, 5))
     plt.plot([h['iteration'] for h in history],
              [h['log_likelihood'] for h in history])
@@ -129,6 +146,7 @@ def main():
     plt.grid(True)
     plt.show()
 
+    # Generate and visualize 5 graphs as specified
     print("\nGenerating 5 example graphs...")
     for i in range(5):
         features, edges = model.generate_graph()
