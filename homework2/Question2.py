@@ -2,6 +2,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
+import os
 
 
 def compute_elbo(x, theta, phi, num_samples=5000):
@@ -75,6 +76,10 @@ plt.xlim(-10, 10)
 # Adjust layout to prevent legend cutoff
 plt.tight_layout()
 
+# Create output directory if it doesn't exist
+output_dir = './output'
+os.makedirs(output_dir, exist_ok=True)
+
 # Save the plot
-plt.savefig('./output/elbo_visualization.png', dpi=300, bbox_inches='tight')
+plt.savefig(os.path.join(output_dir, 'elbo_visualization.png'), dpi=300, bbox_inches='tight')
 plt.close()
