@@ -1,78 +1,70 @@
 import torch
-import torch.nn as nn
-import torch.optim as optim
 import numpy as np
 import matplotlib.pyplot as plt
 
 
-# Define a VAE with scalar parameters θ (decoder) and ϕ (encoder)
-class ScalarVAE(nn.Module):
-    def __init__(self):
-        super(ScalarVAE, self).__init__()
-        self.phi = nn.Parameter(torch.randn(1))  # Encoder mean parameter
-        self.theta = nn.Parameter(torch.randn(1))  # Decoder parameter
-        self.fixed_logvar = torch.zeros(1)  # Fixed encoder variance (σ² = 1)
+def compute_elbo(x, theta, phi, num_samples=1000):
+    """Compute ELBO for given parameters using Monte Carlo sampling."""
+    # Sample z from q(z|x) = N(φ, 1)
+    z = phi + torch.randn(num_samples)
 
-    def encode(self, x):
-        return self.phi, self.fixed_logvar  # q(z|x) = N(ϕ, 1)
+    # Compute log p(x|z) = log N(θz, 1)
+    log_p_x_given_z = -0.5 * (x - theta * z).pow(2) - 0.5 * np.log(2 * np.pi)
 
-    def reparameterize(self, mu, logvar):
-        return mu + torch.randn_like(mu) * torch.exp(0.5 * logvar)
+    # Compute log p(z) = log N(0, 1)
+    log_p_z = -0.5 * z.pow(2) - 0.5 * np.log(2 * np.pi)
 
-    def decode(self, z):
-        return self.theta * z  # p(x|z) = N(θz, 1)
+    # Compute log q(z|x) = log N(φ, 1)
+    log_q_z_given_x = -0.5 * (z - phi).pow(2) - 0.5 * np.log(2 * np.pi)
 
-    def forward(self, x):
-        mu, logvar = self.encode(x)
-        z = self.reparameterize(mu, logvar)
-        return self.decode(z), mu, logvar
+    # ELBO = E_q(z|x)[log p(x|z) + log p(z) - log q(z|x)]
+    elbo = (log_p_x_given_z + log_p_z - log_q_z_given_x).mean()
+
+    return elbo.item()
 
 
-# True log-likelihood via brute-force integration
-def true_log_likelihood(x, theta, z_samples=10000):
-    z = torch.linspace(-5, 5, z_samples)  # Numerical integration over z
-    mu_x = theta * z
-    log_p_x_given_z = -0.5 * (x - mu_x).pow(2)  # log N(x; θz, 1)
-    log_p_z = -0.5 * z.pow(2)  # log N(z; 0, 1)
-    log_p_x = torch.logsumexp(log_p_x_given_z + log_p_z, dim=0) - np.log(z_samples)
-    return log_p_x.item()
+def compute_true_log_likelihood(x, theta, num_points=10000):
+    """Compute true log likelihood using numerical integration."""
+    # Create integration grid
+    z = torch.linspace(-10, 10, num_points)
+    dz = z[1] - z[0]
+
+    # Compute log p(x|z)p(z)
+    log_p_x_given_z = -0.5 * (x - theta * z).pow(2)  # log N(θz, 1)
+    log_p_z = -0.5 * z.pow(2)  # log N(0, 1)
+
+    # Use log-sum-exp trick for numerical stability
+    log_joint = log_p_x_given_z + log_p_z
+    max_log_joint = torch.max(log_joint)
+    log_likelihood = max_log_joint + torch.log(
+        torch.sum(torch.exp(log_joint - max_log_joint)) * dz
+    ) - np.log(2 * np.pi)
+
+    return log_likelihood.item()
 
 
-# Training setup
-model = ScalarVAE()
-optimizer = optim.Adam(model.parameters(), lr=0.05)
-x = torch.tensor([1.0])  # Single 1D data point
+# Set up the plot
+x = torch.tensor(1.0)  # Observed data point
+theta_range = torch.linspace(-10, 10, 200)
+phi_values = [-3, -2, -1, 0, 1, 2, 3]  # Different encoder means to try
+colors = plt.cm.viridis(np.linspace(0, 1, len(phi_values)))
 
-# Trackers
-true_lls, elbos, thetas, phis = [], [], [], []
-
-# Training loop (maximize ELBO)
-for step in range(1000):
-    optimizer.zero_grad()
-    recon_x, mu, logvar = model(x)
-
-    # ELBO = Reconstruction - KL
-    recon_loss = 0.5 * (x - recon_x).pow(2).sum()  # -log p(x|z) ∝ MSE
-    kl = 0.5 * (mu.pow(2) + logvar.exp() - 1 - logvar).sum()  # KL(q||p)
-    elbo = -(recon_loss + kl)  # Maximize ELBO = minimize loss
-    (-elbo).backward()  # Gradient ascent on ELBO
-    optimizer.step()
-
-    # Track metrics
-    theta = model.theta.item()
-    phi = model.phi.item()
-    true_ll = true_log_likelihood(x, torch.tensor(theta))
-    true_lls.append(true_ll)
-    elbos.append(elbo.item())
-    thetas.append(theta)
-    phis.append(phi)
-
-# Plot results
 plt.figure(figsize=(10, 6))
-plt.plot(thetas, true_lls, label="True Log-Likelihood", color="black", linewidth=2)
-plt.plot(thetas, elbos, label="ELBO", color="blue", alpha=0.8)
-plt.xlabel("Decoder Parameter (θ)")
-plt.ylabel("Value")
+
+# Plot ELBO for different phi values
+for phi, color in zip(phi_values, colors):
+    elbos = [compute_elbo(x, theta, phi) for theta in theta_range]
+    plt.plot(theta_range, elbos, color=color, alpha=0.7,
+             label=f'ELBO (φ={phi})')
+
+# Plot true log-likelihood
+true_ll = [compute_true_log_likelihood(x, theta) for theta in theta_range]
+plt.plot(theta_range, true_ll, 'k-', linewidth=2, label='True Log-Likelihood')
+
+plt.xlabel('θ')
+plt.ylabel('log P(x)')
+plt.title('True Log-Likelihood vs ELBO for Different Encoder Parameters (φ)')
 plt.legend()
-plt.title("True Log-Likelihood vs ELBO During Training")
+plt.grid(True)
+plt.ylim(-5, 0)
 plt.show()
